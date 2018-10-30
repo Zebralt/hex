@@ -2,6 +2,7 @@
 import time
 import curses
 import string
+from gui import *
 
 """
 From what I gather, if we want to build a content-agnostic Curses Application:
@@ -23,107 +24,9 @@ enable key capture for the current element.
 
 """
 
-colors = {
-    'r':curses.COLOR_RED,
-    'g':curses.COLOR_GREEN,
-    'y':curses.COLOR_YELLOW,
-    'db':curses.COLOR_BLUE,
-    'm':curses.COLOR_MAGENTA,
-    'b':6
-}
-
-class TextAlign:
-    LEFT, MIDDLE, RIGHT = range(3)
-
-padding_char = ' '
-
-class Element:
-    def __init__(self, width=1, height=1, x=0, y=0, traversable=False):
-        self.width = width
-        self.height = height
-        self.x = x
-        self.y = y
-        
-    def paint(self):
-        return ['x' * self.width] * self.height
-    
-class Label(Element):
-    def __init__(self, text, padding=(1,2,1,2), margin=(1,)*4, traversable=False, color=0):
-        self.ptop, self.pright, self.pbottom, self.pleft = padding
-        self.mtop, self.mright, self.mbottom, self.mleft = margin
-        
-        # Text Formatting includes :
-        # * padding : top, right, bottom, left
-        # * overflow : should the text extend the overall size of the element if space is lacking ?
-        # * of these depends the final number of lines
-        # * we can always include line/word wrap
-        # * line wrap
-        # * text align (left, middle, right)
-        # * text justification
-        
-        max_line_length = max(map(len, text.split('\n')))
-        
-        Element.__init__(self, width=max_line_length + self.pright + self.pleft, height=text.count('\n') + self.ptop + self.pbottom, traversable=traversable)
-        
-        self.text = text
-        self.color = color
-        self.align = TextAlign.LEFT
-        
-    def align_text(self, text=self.text, align=self.align):
-        self.text = text
-        self.align = align
-        
-    
-    def paint(self, win):
-        
-        # generate aligned, line-y text
-        max_line_length = max(map(len, self.text.split('\n')))
-        lines = [t.center(max_line_length + self.pleft + self.pright) for t in self.text.split('\n')]
-        
-        
-        l = [padding_char * self.width] * self.ptop + lines + [padding_char * self.width] * self.pbottom
-        win.writelines(self.x, self.y, l, self.color)
-    
-class Panel(Element):
-    def __init__(self):
-        Element.__init__(self)
-        self.elements = []
-        
-    def pack(self, mode, spacing=1, **kw):
-        
-        if not self.elements:
-            return
-        
-        first = self.elements[0]
-        first.x, first.y = self.x, self.y
-        
-        maxheight = max([x.height for x in self.elements])
-        maxwidth = max([x.width for x in self.elements])
-        
-        if mode == 'column':
-#            self.width = maxwidth
-#            self.height = maxheight
-            for el0, el1 in zip(self.elements, self.elements[1:]):
-                el1.x, el1.y = el0.x, el0.y + el0.height + 1 + spacing
-                
-        if mode == 'row':
-#            self.width = maxwidth
-#            self.height = maxheight
-            for el0, el1 in zip(self.elements, self.elements[1:]):
-                el1.x, el1.y = el0.x + el0.width + spacing, el0.y
-            
-        if mode == 'grid':
-            grid_width, grid_height = kw['gwidth'], kw['gheight']
-            
-            
-    
-    def add(self, el):
-        self.elements.append(el)
-        
-    def paint(self, win):
-        for el in self.elements:
-            el.paint(win)
-    
+#-------------------------------------------------------------------------------
+# A simple class to encapsulate the concept of update/refresh delay.
+#-------------------------------------------------------------------------------
 class RefreshTimer:
     def __init__(self, delay):
         self.now = time.time()
@@ -136,15 +39,26 @@ class RefreshTimer:
         if ans: self.past = self.now
         return ans
 
+#-------------------------------------------------------------------------------
+# 
+#-------------------------------------------------------------------------------
+colors = {
+    'r':curses.COLOR_RED,
+    'g':curses.COLOR_GREEN,
+    'y':curses.COLOR_YELLOW,
+    'db':curses.COLOR_BLUE,
+    'm':curses.COLOR_MAGENTA,
+    'b':6
+}
+
 class Application:
     def __init__(self):
         self.elements = []
-        self.color_pairs = []
+        self.color_pairs = {}
         self.shortcuts = {'q' : self.quit}
         
         self.refresh_delay = .1
-        # ...
-        
+        self.nodelay = True        
         
     def start(self):
         """
@@ -157,7 +71,56 @@ class Application:
         self.true_width, self.true_height = self.width - 2, self.height - 1
         
         self.wrapper = curses.wrapper(self.main)        
+    
+
+    def main(self, stdscr):
         
+        self.stdscr = stdscr
+        self.stdscr.nodelay(self.nodelay)
+    
+        for i in range(1,8):
+            curses.init_pair(i,i,0)
+    
+        for i, e in enumerate(colors.values()):
+            curses.init_pair(i + 1, e, 0)
+        
+        for i, e in enumerate(colors.values()):
+            curses.init_pair(i + 1 + len(colors), 0, e)
+            
+        curses.init_pair(34, 0, 7)
+        
+        rti = RefreshTimer(self.refresh_delay)
+        
+        self.update()
+        
+        while True:
+            
+            try:
+                self.key = stdscr.getkey()
+                self.alert('You pressed', self.key)
+
+                func = self.shortcuts.get(self.key, lambda *_:1)
+
+                if func == self.quit:
+                    if func():
+                        break
+                else:
+                    func(self.key)
+            
+            except curses.error as e: 
+                pass
+            
+            except Exception as e:
+                self.alert(str(e))
+                        
+            if not rti():
+                continue
+                
+            self.update()
+            self.paint()
+            self.refresh()
+
+
     def shortcut(self, name, action=None):
         """
         Associate a key to a function.
@@ -190,8 +153,15 @@ class Application:
             self.write(x, y + i, line, color=color)
     
     def oneKeyPrompt(self, *msg, sep=' '):
+        self.stdscr.nodelay(False)
         self.stdscr.addstr(self.height - 1, 0, sep.join(msg))
-        return self.stdscr.getkey()
+        x = self.stdscr.getkey()
+        self.stdscr.nodelay(self.nodelay)
+        return x
+
+    def yesno(self, msg, answers='yn'):
+        ans = self.oneKeyPrompt(msg, '(%s)' % (answers.title()))
+        return ans == answers[0]
     
     def prompt(self, *msg, sep=' '):
         self.stdscr.addstr(self.height - 1, 0, sep.join(msg))
@@ -221,7 +191,7 @@ class Application:
         A token function for quitting the application. This will just break out of the loop.
         """
         
-        pass
+        return self.yesno('Are you sure you want to quit ?')
     
     def add(self, elem):
         self.elements.append(elem)
@@ -233,53 +203,20 @@ class Application:
 
     def color_pair(self, idx, fg=0, bg=0):
         if not fg and not bg:
-            return self.color_pairs
+            return self.color_pairs.get(idx)
+        else:
+            name = idx
+            if type(idx) == str:
+                idx = len(self.color_pairs.keys()) + 1
+            curses.init_pair(idx, fg, bg)
+            self.color_pairs[name] = curses.color_pair(idx)
     
-    def main(self, stdscr):
-        
-        self.stdscr = stdscr
-        self.stdscr.nodelay(True)
-    
-        for i in range(1,8):
-            curses.init_pair(i,i,0)
-    
-        for i, e in enumerate(colors.values()):
-            curses.init_pair(i + 1, e, 0)
-        
-        for i, e in enumerate(colors.values()):
-            curses.init_pair(i + 1 + len(colors), 0, e)
-            
-        curses.init_pair(34, 0, 7)
-        
-        rti = RefreshTimer(self.refresh_delay)
-        
-        self.update()
-        
-        while True:
-            
-            try:
-                self.key = stdscr.getkey()
-                self.alert('You pressed', self.key)
-
-                func = self.shortcuts.get(self.key, lambda *_:1)
-
-                if func == self.quit:
-                    break
-                else:
-                    func(self.key)
-            
-            except curses.error as e: 
-                pass
-            
-            except Exception as e:
-                self.alert(str(e))
-                        
-            if not rti():
-                continue
-                
-            self.update()
-            self.paint()
-            self.refresh()
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
             
 if __name__ == '__main__':
     app = Application()
@@ -287,7 +224,7 @@ if __name__ == '__main__':
     # GUI Elements
     p = Panel()
     for i in range(1,13):
-        l = Label('[Label %d]' % (i), padding=(0,)*4, color=i + 1)
+        l = Label('[Label %d]' % (i), padding=(0,2,0,2), color=i + 1)
         p.add(l)
     p.x, p.y = 10, 10
     p.pack('row')
