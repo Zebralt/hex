@@ -191,7 +191,7 @@ class Application:
         A token function for quitting the application. This will just break out of the loop.
         """
         
-        return self.yesno('Are you sure you want to quit ?')
+        return True or self.yesno('Are you sure you want to quit ?')
     
     def add(self, elem):
         self.elements.append(elem)
@@ -201,18 +201,32 @@ class Application:
             el.paint(self)
 #            self.writelines(el.x, el.y, el.paint())
 
-    def color_pair(self, idx, fg=0, bg=0):
-        if not fg and not bg:
-            return self.color_pairs.get(idx)
+    def color_pair(self, name, fg=0, bg=0):
+        
+        if not fg and not bg:          
+            return self.named_color_pairs.get(name)
         else:
-            name = idx
-            if type(idx) == str:
-                idx = len(self.color_pairs.keys()) + 1
-            curses.init_pair(idx, fg, bg)
-            self.color_pairs[name] = curses.color_pair(idx)
-    
+            idx = max(self.index_color_pairs.values()) + 1
+            self.index_color_pairs[(fg, bg)] = idx
+            self.named_color_pairs[name] = idx
+        
+        
 #-------------------------------------------------------------------------------
+# Curses handles color in pairs (fg, bg). Those are registered with an index:
+# idx -> (fg, bg)
+# What I want to be able to do is :
+# To create color pairs in advance, in the form (fg, bg) -> idx
+# because I want the user to be able to specify either his own colors
+# when creating an element, or to choose a color pair already created by name.
+# So I need:
+# 1. To create a dict (fg, bg) -> curses.idx
+# 2. To create a dict name -> {'fg' : x, 'bg' : y}
+# So that the user can do Label('...', **color_pair('LabelStyle'))
+# or 
+# Label('...', color=idx ? 'LabelStyle' ?)
+# color id, color name, color (fg,bg) ...
 #-------------------------------------------------------------------------------
+# As for laying out elements inside containers ...
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
@@ -222,18 +236,29 @@ if __name__ == '__main__':
     app = Application()
     
     # GUI Elements
-    p = Panel()
-    for i in range(1,13):
-        l = Label('[Label %d]' % (i), padding=(0,2,0,2), color=i + 1)
-        p.add(l)
-    p.x, p.y = 10, 10
-    p.pack('row')
-    app.add(p)
+#    p = Panel()
+#    for i in range(1,13):
+#        l = Label('[Label %d]' % (i), padding=(0,2,0,2), color=i + 1)
+#        p.add(l)
+#    p.x, p.y = 10, 10
+#    p.pack('row')
+#    app.add(p)
+#    
+#    
+#    l = Label('This inverted\n but better', color=34)
+#    l.x, l.y = 30, 30
+#    app.add(l)
+    title_panel = Panel()
     
+    name_label = Label('Application 28.5', color=12, padding=(0,1,1,1))
+    version_label = Label('34.02.3', color=8, padding=(0,1,1,1))
     
-    l = Label('This inverted\n but better', color=34)
-    l.x, l.y = 30, 30
-    app.add(l)
+    title_panel.add(name_label)
+    title_panel.add(version_label)
+    
+    title_panel.pack('row')
+    
+    app.add(title_panel)
     
     # Shortcuts
     app.shortcut('x', action=lambda *_: app.write(0, 20, 'You pressed X!'))
