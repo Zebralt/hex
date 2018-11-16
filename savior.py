@@ -2,6 +2,8 @@
 import time
 import curses
 import string
+from random import choice
+
 from gui import *
 
 """
@@ -58,17 +60,17 @@ class Application:
         self.shortcuts = {'q' : self.quit}
         
         self.refresh_delay = .1
-        self.nodelay = True        
+        self.nodelay = True 
+        
+        curses.initscr()
+        
+        self.width, self.height = curses.COLS, curses.LINES
+        self.true_width, self.true_height = self.width - 2, self.height - 1       
         
     def start(self):
         """
         Starts the Curses wrapper.
         """
-        
-        curses.initscr()
-        
-        self.width, self.height = curses.COLS, curses.LINES
-        self.true_width, self.true_height = self.width - 2, self.height - 1
         
         self.wrapper = curses.wrapper(self.main)        
     
@@ -234,17 +236,36 @@ class Application:
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
             
-def scrollbar(i, v, length=10):
-    char = '\u2588'
-    nochar = '\u2590'
-    pos = int(i/v * length)
-    for x in range(length):
-        print(' ' * 3, end='')
-        if x == pos:
-            print('\033[34m' + char + '\033[0m', end='')
-        else:
-            print(nochar, end='')
-        print('')
+
+class Savior(Element):
+    def __init__(self, width, height):
+        self.char = '\u2588'
+        self.x, self.y = 0, 1
+        self.pc = Label(self.char, color=2, padding=(0,) * 4)
+        self.pc.x, self.pc.y = self.x, self.y
+        self.width, self.height = width, height
+        self.board = [['\u2588' for _ in range(self.width)]] * self.height
+        self.i = 0
+        
+    def update(self):
+#         self.board = [[choice('-_#') for _ in range(self.width)]] * self.height
+        pass
+        
+    def paint(self, win):
+        win.writelines(self.x, self.y, [*map(lambda x:''.join(x), self.board)], color=0)
+        self.pc.paint(win)
+        
+    def set_pos(self, pos):
+        self.pc.x, self.pc.y = (
+            (pos[0] % (self.width + 1)),
+            (pos[1] % (self.height + 1))
+        )
+       
+    def pcx(self, x):
+        self.set_pos((x, self.pc.y))
+        
+    def pcy(self, y):
+        self.set_pos((self.pc.x, y))
     
 if __name__ == '__main__':
     
@@ -252,32 +273,23 @@ if __name__ == '__main__':
 #     exit()
     app = Application()
     
-    # GUI Elements
-    p = Panel()
-    for i in range(1,13):
-        l = Label('[Label %d]' % (i), padding=(0,2,0,2), color=i + 1)
-        p.add(l)
-    p.x, p.y = 10, 10
-    p.pack('row')
-    app.add(p)
-
-
-    l = Label('This inverted\n but better', color=34)
-    l.x, l.y = 30, 30
-    app.add(l)
-    title_panel = Panel()
+    # GUI Elements    
+    name_label = Label('Application 28.5', color=12, padding=(0,1,0,1))
+    app.add(name_label)
     
-    name_label = Label('Application 28.5', color=12, padding=(0,1,1,1))
-    version_label = Label('34.02.3', color=8, padding=(0,1,1,1))
+    board = Savior(app.width//2, app.height//2)
+    app.add(board)
     
-    title_panel.add(name_label)
-    title_panel.add(version_label)
-    
-    title_panel.pack('row')
-    
-    app.add(title_panel)
+    app.update = board.update
+    app.refresh_delay = 0.05
+#     app.refresh_delay = 0.5
     
     # Shortcuts
-    app.shortcut('x', action=lambda *_: app.write(0, 20, 'You pressed X!'))
+    app.shortcut('x', action=lambda *_: board.__setattr__('char', choice(string.punctuation)))
+    app.shortcut('KEY_RIGHT', action=lambda *_: board.pcx(board.pc.x + 1))
+    app.shortcut('KEY_DOWN', action=lambda *_: board.pcy(board.pc.y + 1))
+    app.shortcut('KEY_LEFT', action=lambda *_: board.pcx(board.pc.x - 1))
+    app.shortcut('KEY_UP', action=lambda *_: board.pcy(board.pc.y - 1))
+    
     
     app.start()
