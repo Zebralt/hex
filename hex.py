@@ -235,21 +235,21 @@ class Application:
 #-------------------------------------------------------------------------------
             
 def scrollbar(i, v, length=10):
-    char = '\u2588'
-    nochar = '\u2590'
+    char = '\u2503'
+    nochar = '\u2502'
     pos = int(i/v * length)
     for x in range(length):
-        print(' ' * 3, end='')
+        print(' ', end='')
         if x == pos:
-            print('\033[34m' + char + '\033[0m', end='')
+            print('\033[1m' + char + '\033[0m', end='')
         else:
-            print(nochar, end='')
+            print('\033[2m' + nochar + '\033[m', end='')
         print('')
     
 if __name__ == '__main__':
     
-#     scrollbar(23, 100)
-#     exit()
+    scrollbar(23, 100)
+    # exit()
     app = Application()
     
     # GUI Elements
